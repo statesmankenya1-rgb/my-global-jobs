@@ -7,7 +7,7 @@ import dotenv from "dotenv";
 dotenv.config();
 
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 
 app.use(express.json());
 
@@ -65,7 +65,7 @@ app.post("/api/gemini/enhance-summary", async (req, res) => {
     const { summary, title } = req.body;
     const ai = getGeminiClient();
 
-    const prompt = `Elevate the following professional summary for a candidate aiming to be a "${title || "Professional"}". Make it highly compelling, confident, metrics-friendly, and optimized to pass Applicant Tracking Systems (ATS). Keep it under 80 words.
+    const prompt = `Elevate the following professional summary for a candidate aiming to be a "${title || "Professional"}". Make it highly compelling, confident, metrics-friendly, and optimized to catch recruiter eyes at a glance.
 Current Summary: ${summary}`;
 
     const result = await ai.models.generateContent({
@@ -85,7 +85,7 @@ app.post("/api/gemini/enhance-experience", async (req, res) => {
     const { experience, title, company } = req.body;
     const ai = getGeminiClient();
 
-    const prompt = `Rewrite the following experience bullets for the role of "${title}" at "${company || "Company"}". Enhance them with powerful action verbs, quantitative metrics, and industry-standard ATS-friendly phrases. Present them as 3 to 4 crisp, high-impact bullet points.
+    const prompt = `Rewrite the following experience bullets for the role of "${title}" at "${company || "Company"}". Enhance them with powerful action verbs, quantitative metrics, and industry-standard achievements.
 Current raw duties: ${experience}`;
 
     const result = await ai.models.generateContent({
@@ -105,7 +105,8 @@ app.post("/api/gemini/suggest-skills", async (req, res) => {
     const { title } = req.body;
     const ai = getGeminiClient();
 
-    const prompt = `Suggest a comma-separated list of exactly 8 high-paying, in-demand technical, functional, and digital tools/skills for a candidate seeking a "${title}" job in international markets. Provide ONLY the skills as a simple comma-separated list, e.g. "Skill A, Skill B, Skill C" without extra preambles.`;
+    const prompt = `Suggest a comma-separated list of exactly 8 high-paying, in-demand technical, functional, and digital tools/skills for a candidate seeking a "${title}" job in international markets.
+Return only the list, no explanations.`;
 
     const result = await ai.models.generateContent({
       model: "gemini-3.5-flash",
@@ -131,7 +132,7 @@ Target vacancy: ${jobTitle} at ${company} in ${location}
 Compensation listed: ${salary || "Competitive"}
 Representative outline: ${candidateExperience || "Accomplished background in executing high-impact solutions."}
 
-Keep the tone persuasive, professional, and confident. Connect the candidate's ambition directly with the target company's culture. Ensure it is appropriately spaced and ready to be customized. Limit the letter to around 200-250 words.`;
+Keep the tone persuasive, professional, and confident. Connect the candidate's ambition directly with the target company's culture. Ensure it is appropriately spaced and ready to be customized. Limit to 3 paragraphs.`;
 
     const result = await ai.models.generateContent({
       model: "gemini-3.5-flash",
@@ -142,6 +143,11 @@ Keep the tone persuasive, professional, and confident. Connect the candidate's a
   } catch (error: any) {
     res.status(500).json({ error: error.message || "Failed to generate Cover Letter." });
   }
+});
+
+// Health check endpoint
+app.get("/health", (req, res) => {
+  res.json({ status: "ok" });
 });
 
 // Setup server integration with Vite middleware
@@ -163,8 +169,12 @@ async function startServer() {
   }
 
   app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on host 0.0.0.0, port ${PORT}`);
+    console.log(`🚀 Server running on host 0.0.0.0, port ${PORT}`);
+    console.log(`Environment: ${process.env.NODE_ENV || "development"}`);
   });
 }
 
-startServer();
+startServer().catch((err) => {
+  console.error("Failed to start server:", err);
+  process.exit(1);
+});
