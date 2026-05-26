@@ -1,0 +1,6 @@
+{
+  "name": "ZOE AFRICA",
+  "description": "Africa's #1 AI-Powered Career Platform and Job Board. Create premium CVs, match with international roles, pay easily, and interface with an AI Career Coach.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,130 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global Safety Catch-All: Default block everything
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Reuseable global helpers
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    // User Profile Validation Helper
+    function isValidUser(data) {
+      return data.keys().hasAll(['uid', 'email', 'firstName', 'lastName', 'country', 'professionalTitle', 'subscriptionPlan', 'cvScore', 'isPaid', 'createdAt'])
+        && data.keys().size() == 10
+        && data.uid == request.auth.uid
+        && data.email is string && data.email.size() <= 120
+        && data.firstName is string && data.firstName.size() <= 80
+        && data.lastName is string && data.lastName.size() <= 80
+        && data.country is string && data.country.size() <= 80
+        && data.professionalTitle is string && data.professionalTitle.size() <= 120
+        && data.subscriptionPlan is string && (data.subscriptionPlan == 'free' || data.subscriptionPlan == 'pro' || data.subscriptionPlan == 'elite')
+        && data.cvScore is int && data.cvScore >= 0 && data.cvScore <= 100
+        && data.isPaid is bool
+        && data.createdAt == request.time;
+    }
+
+    // Users Collection rules
+    match /users/{userId} {
+      allow get: if isOwner(userId);
+      allow create: if isOwner(userId) && isValidUser(incoming());
+      allow update: if isOwner(userId) 
+        && incoming().uid == existing().uid
+        && incoming().email == existing().email
+        && incoming().createdAt == existing().createdAt
+        // Split updates for updating profile vs upgrading plan
+        && (
+          // Action 1: Modify basic profile details
+          (incoming().diff(existing()).affectedKeys().hasOnly(['firstName', 'lastName', 'country', 'professionalTitle', 'cvScore']) && isValidUser(incoming())) ||
+          // Action 2: Trigger premium plan updates
+          (incoming().diff(existing()).affectedKeys().hasOnly(['subscriptionPlan', 'isPaid']) && isValidUser(incoming()))
+        );
+      allow delete: if false; // Profiles shouldn't be deleted over public client SDKs
+    }
+
+    // CVs Entity Validation Helper
+    function isValidCV(data) {
+      return data.keys().hasAll(['userId', 'title', 'summary', 'experience', 'education', 'skills', 'softSkills', 'languages', 'updatedAt'])
+        && data.keys().size() == 9
+        && data.userId == request.auth.uid
+        && data.title is string && data.title.size() <= 120
+        && data.summary is string && data.summary.size() <= 5000
+        && data.experience is string && data.experience.size() <= 10000
+        && data.education is string && data.education.size() <= 5000
+        && data.skills is string && data.skills.size() <= 2000
+        && data.softSkills is string && data.softSkills.size() <= 2000
+        && data.languages is string && data.languages.size() <= 500
+        && data.updatedAt == request.time;
+    }
+
+    // CVs Collection rules
+    match /cvs/{userId} {
+      allow get: if isOwner(userId);
+      allow create: if isOwner(userId) && isValidCV(incoming());
+      allow update: if isOwner(userId) 
+        && incoming().userId == existing().userId
+        && isValidCV(incoming());
+      allow delete: if false;
+    }
+
+    // Applications Validation Helper
+    function isValidApplication(data) {
+      return data.keys().hasAll(['userId', 'jobId', 'jobTitle', 'company', 'location', 'coverLetter', 'status', 'statusColor', 'dateApplied'])
+        && data.keys().size() == 9
+        && data.userId == request.auth.uid
+        && data.jobId is int
+        && data.jobTitle is string && data.jobTitle.size() <= 150
+        && data.company is string && data.company.size() <= 150
+        && data.location is string && data.location.size() <= 150
+        && data.coverLetter is string && data.coverLetter.size() <= 8000
+        && data.status is string && (data.status == 'Applied' || data.status == 'Interview' || data.status == 'Offer' || data.status == 'Offer 🎉' || data.status == 'Rejected')
+        && data.statusColor is string && data.statusColor.size() <= 40
+        && data.dateApplied == request.time;
+    }
+
+    // Application collection list and mutation gates
+    match /applications/{applicationId} {
+      allow get: if isSignedIn() && resource.data.userId == request.auth.uid;
+      // List query security: Checks that the user is listing only their own sub-applications
+      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn() 
+        && isValidId(applicationId) 
+        && incoming().userId == request.auth.uid 
+        && isValidApplication(incoming());
+      allow update: if isSignedIn() 
+        && existing().userId == request.auth.uid
+        && incoming().userId == existing().userId
+        && incoming().jobId == existing().jobId
+        && incoming().company == existing().company
+        && incoming().jobTitle == existing().jobTitle
+        && incoming().dateApplied == existing().dateApplied
+        && (
+          // Action 1: Mutate cover letter
+          (incoming().diff(existing()).affectedKeys().hasOnly(['coverLetter']) && isValidApplication(incoming())) ||
+          // Action 2: Pipeline status advancement
+          (incoming().diff(existing()).affectedKeys().hasOnly(['status', 'statusColor']) && isValidApplication(incoming()))
+        );
+      allow delete: if isSignedIn() && existing().userId == request.auth.uid;
+    }
+  }
+}
